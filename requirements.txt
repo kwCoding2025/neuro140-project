@@ -1,0 +1,10 @@
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+tensorboard>=2.13.0
+scikit-learn>=1.0.2
+numpy>=1.21.0
+Pillow>=9.0.0
+matplotlib>=3.5.0
+tqdm>=4.65.0
+cairosvg>=2.7.0 
