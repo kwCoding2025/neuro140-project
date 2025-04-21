@@ -1,0 +1,5 @@
+# Ignore data and video files
+*.mp4
+*.svg
+*.pkl
+*.tar.xz 
