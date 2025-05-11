@@ -3,5 +3,22 @@
 *.svg
 *.pkl
 *.tar.xz
+video/
+
+# Dataset folders
+downloaded_data/
+floorplancad-dataset/
+floorplancad-processed/
+
 # Ignore log files
 *.log 
+
+# Ignore bash scripts
+*.sh
+run_evaluation.sh
+train.sh
+demo_gpu_bash.sh
+runconvert.sh 
+
+# Ignore Markdown files
+*.md 

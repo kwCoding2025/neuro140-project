@@ -1,15 +1,15 @@
-# Find and create best checkpoints from existing epoch checkpoints
+# find best checkpoints
 import torch
 import logging
 from pathlib import Path
 import shutil
 import os
 
-# Set up logging
+# setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define paths
+# define paths
 NETWORK_DIR = Path("/n/netscratch/tambe_lab/Lab/kweerakoon/checkpoints-floorplan")
 CHECKPOINTS_DIR = NETWORK_DIR / "checkpoints"
 
@@ -22,24 +22,24 @@ def find_best_checkpoint(model_name):
     
     logger.info(f"Found {len(checkpoints)} checkpoints for {model_name}")
     
-    # Track best checkpoint
+    # track best
     best_checkpoint = None
     best_val_loss = float('inf')
     
-    # Check validation loss of each checkpoint
+    # check val loss
     for checkpoint_path in checkpoints:
         try:
-            # Load checkpoint to CPU to avoid GPU memory issues
+            # load to cpu
             checkpoint = torch.load(checkpoint_path, map_location='cpu')
             
-            # Get validation loss from checkpoint
+            # get val loss
             if 'val_loss' in checkpoint:
                 val_loss = checkpoint['val_loss']
                 epoch = checkpoint['epoch']
                 
                 logger.info(f"Checkpoint {checkpoint_path.name}: Epoch {epoch}, Val Loss: {val_loss:.4f}")
                 
-                # Update best if this is better
+                # update best
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_checkpoint = checkpoint_path
@@ -57,11 +57,11 @@ def find_best_checkpoint(model_name):
 
 def main():
     """Create best checkpoint files for all models"""
-    # Define model names
+    # model names
     models = ["resnet50", "vit"]
     
     for model_name in models:
-        # Check if best checkpoint already exists
+        # check if best exists
         best_path = CHECKPOINTS_DIR / f"{model_name}_best.pt"
         if best_path.exists():
             logger.info(f"Best checkpoint for {model_name} already exists at {best_path}")
@@ -70,12 +70,12 @@ def main():
         # Find best checkpoint
         best_checkpoint = find_best_checkpoint(model_name)
         if best_checkpoint:
-            # Create best checkpoint file (either by copy or by saving with modified filename)
+            # create best checkpoint file
             try:
-                # Option 1: Copy the file (faster but uses more disk space)
+                # option 1: copy file
                 shutil.copy2(best_checkpoint, best_path)
                 
-                # Option 2: Load and save with new name (slower but no extra disk space)
+                # option 2: load/save
                 # checkpoint_data = torch.load(best_checkpoint, map_location='cpu')
                 # torch.save(checkpoint_data, best_path)
                 

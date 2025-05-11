@@ -12,21 +12,21 @@ from torchvision.models import ResNet50_Weights
 from transformers import ViTModel
 import torch.nn as nn
 
-# Import dataset and model definitions
-from src.utils.data import FloorplanDataset # Corrected import path
+# import dataset and model
+from src.utils.data import FloorplanDataset
 from src.models import CompositeModel
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Update paths
+# paths
 PROJECT_ROOT = Path(__file__).parent.parent
 NETWORK_DIR = Path("/n/netscratch/tambe_lab/Lab/kweerakoon/checkpoints-floorplan")
 EVAL_DIR = NETWORK_DIR / "evaluation_results"
 CHECKPOINTS_DIR = NETWORK_DIR / "checkpoints"
 SPLIT_DIR = NETWORK_DIR / "split"
 
-# Create directories if they don't exist
+# create dirs
 for dir_path in [EVAL_DIR, CHECKPOINTS_DIR, SPLIT_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +34,7 @@ def remove_module_prefix(state_dict):
     """Remove the 'module.' prefix from state dict keys if present."""
     new_state_dict = {}
     for k, v in state_dict.items():
-        name = k[7:] if k.startswith('module.') else k  # Remove 'module.' prefix
+        name = k[7:] if k.startswith('module.') else k  # remove prefix
         new_state_dict[name] = v
     return new_state_dict
 
@@ -43,10 +43,10 @@ def convert_to_svg_path(coords):
     if len(coords) < 2:
         return ""
     
-    # Start path with first point
+    # start path
     path = f"M {coords[0][0]:.3f},{coords[0][1]:.3f}"
     
-    # Add line segments to remaining points
+    # add line segments
     for x, y in coords[1:]:
         path += f" L {x:.3f},{y:.3f}"
     
@@ -60,33 +60,33 @@ def predictions_to_json(predictions, original_data):
         'layers': {}
     }
     
-    # Convert wall coordinates back to points
+    # wall coords to points
     wall_coords = predictions['wall_coords'].reshape(-1, 2)
     
-    # Filter out zero-padding
+    # filter zero-padding
     valid_coords = wall_coords[~np.all(wall_coords == 0, axis=1)]
     
-    # Group coordinates into walls (assuming each wall has 2 points)
+    # group coords to walls
     walls = []
     for i in range(0, len(valid_coords)-1, 2):
         start = valid_coords[i]
         end = valid_coords[i+1]
         
-        # Skip if points are too close (< 0.01 units)
+        # skip if too close
         if np.linalg.norm(end - start) < 0.01:
             continue
             
         walls.append({
             'd': convert_to_svg_path([start, end]),
-            'stroke': "rgb(0,178,0)",  # Wall color
+            'stroke': "rgb(0,178,0)",
             'stroke-width': "0.1",
             'fill': "none",
-            'semantic-id': "17",  # Wall semantic-id
+            'semantic-id': "17",
             'instance-id': str(len(walls)),
             'points': [start.tolist(), end.tolist()]
         })
     
-    # Add walls to layers
+    # add walls to layers
     if walls:
         output['layers']['predicted_walls'] = walls
     
@@ -94,21 +94,21 @@ def predictions_to_json(predictions, original_data):
 
 def evaluate_model(model_path, test_loader, device):
     """Evaluate model performance and generate predictions"""
-    model_name = model_path.stem.split('_')[0]  # Extract model name (resnet50 or vit)
+    model_name = model_path.stem.split('_')[0]  # extract model name
     
-    # Initialize model with correct backbone
+    # init model
     model = CompositeModel(backbone=model_name)
     model.to(device)
     
-    # Load checkpoint with special handling for module prefix
+    # load checkpoint
     checkpoint = torch.load(model_path, map_location=device)
     model_state_dict = checkpoint['model_state_dict']
     
-    # Remove module prefix if present (handles DDP-trained models)
+    # remove module prefix
     model_state_dict = remove_module_prefix(model_state_dict)
     
     try:
-        # Load state dict with strict=False to handle any minor discrepancies
+        # load state dict
         model.load_state_dict(model_state_dict, strict=False)
         logger.info(f"Loaded model from {model_path} with missing keys handled")
     except Exception as e:
@@ -117,7 +117,7 @@ def evaluate_model(model_path, test_loader, device):
     
     model.eval()
     
-    # Evaluate metrics
+    # eval metrics
     room_errors = []
     wall_errors = []
     coord_errors = []
@@ -130,7 +130,7 @@ def evaluate_model(model_path, test_loader, device):
             
             outputs = model(images)
             
-            # Calculate errors
+            # calc errors
             room_error = torch.abs(outputs['room_count'] - targets['room_count'])
             wall_error = torch.abs(outputs['wall_count'] - targets['wall_count'])
             coord_error = torch.abs(outputs['wall_coords'] - targets['wall_coords'])
@@ -139,7 +139,7 @@ def evaluate_model(model_path, test_loader, device):
             wall_errors.extend(wall_error.cpu().numpy())
             coord_errors.extend(coord_error.mean(dim=1).cpu().numpy())
             
-            # Store predictions
+            # store predictions
             for i in range(len(images)):
                 pred = {
                     'room_count': float(outputs['room_count'][i].cpu().numpy()),
@@ -148,17 +148,17 @@ def evaluate_model(model_path, test_loader, device):
                 }
                 predictions.append(pred)
     
-    # Calculate metrics
+    # calc metrics
     mean_room_error = np.mean(room_errors)
     mean_wall_error = np.mean(wall_errors)
     mean_coord_error = np.mean(coord_errors)
     
-    # Normalize errors to [0, 1] range for composite score
-    norm_room_error = min(mean_room_error / 5.0, 1.0)  # Assume max error of 5 rooms
-    norm_wall_error = min(mean_wall_error / 10.0, 1.0)  # Assume max error of 10 walls
-    norm_coord_error = min(mean_coord_error / 0.5, 1.0)  # Normalized to 0.5 range
+    # normalize errors
+    norm_room_error = min(mean_room_error / 5.0, 1.0)
+    norm_wall_error = min(mean_wall_error / 10.0, 1.0)
+    norm_coord_error = min(mean_coord_error / 0.5, 1.0)
     
-    # Composite score (lower is better)
+    # composite score
     composite_score = (0.4 * norm_room_error + 0.4 * norm_wall_error + 0.2 * norm_coord_error)
     
     metrics = {
@@ -178,7 +178,7 @@ def evaluate_model(model_path, test_loader, device):
 
 def plot_results(metrics, output_dir):
     """Generate visualization plots"""
-    # Create bar plot of metrics
+    # bar plot metrics
     plt.figure(figsize=(10, 6))
     plt.bar(metrics.keys(), metrics.values())
     plt.title('Model Evaluation Metrics')
@@ -188,18 +188,18 @@ def plot_results(metrics, output_dir):
     plt.close()
 
 def main():
-    # Setup
+    # setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     try:
-        # Load test dataset
+        # load test dataset
         with open(SPLIT_DIR / 'test.pkl', 'rb') as f:
             test_files = pickle.load(f)
     except FileNotFoundError:
         logger.error("Test split file not found. Please run training first.")
         return
     
-    # Create test dataset and loader
+    # create test dataset/loader
     test_transform = transforms.Compose([
         transforms.Resize(224),
         transforms.CenterCrop(224),
@@ -209,7 +209,7 @@ def main():
     test_dataset = FloorplanDataset(test_files, transform=test_transform)
     test_loader = DataLoader(test_dataset, batch_size=32, num_workers=4)
     
-    # Evaluate both models
+    # eval models
     models = {
         'resnet50': CHECKPOINTS_DIR / 'resnet50_best.pt',
         'vit': CHECKPOINTS_DIR / 'vit_best.pt'
@@ -217,7 +217,7 @@ def main():
     
     all_metrics = {}
     
-    # Check if model files exist
+    # check model files exist
     for model_name, model_path in models.items():
         if not model_path.exists():
             logger.error(f"Model checkpoint not found: {model_path}")
@@ -227,7 +227,7 @@ def main():
         metrics, predictions = evaluate_model(model_path, test_loader, device)
         all_metrics[model_name] = metrics
         
-        # Save predictions as JSON
+        # save predictions
         predictions_dir = EVAL_DIR / f'{model_name}_predictions'
         predictions_dir.mkdir(exist_ok=True)
         
@@ -235,12 +235,12 @@ def main():
             with open(predictions_dir / f'prediction_{i}.json', 'w') as f:
                 json.dump(pred, f, indent=2)
         
-        # Save metrics
+        # save metrics
         with open(EVAL_DIR / f'{model_name}_metrics.json', 'w') as f:
             json.dump(metrics, f, indent=2)
     
     if len(all_metrics) >= 2:
-        # Calculate improvement only if both models were evaluated
+        # calc improvement
         vit_score = all_metrics['vit']['composite_score']
         resnet_score = all_metrics['resnet50']['composite_score']
         improvement = (resnet_score - vit_score) / resnet_score * 100
@@ -256,7 +256,7 @@ def main():
             }
         }
         
-        # Save final report
+        # save final report
         with open(EVAL_DIR / 'final_report.json', 'w') as f:
             json.dump(report, f, indent=2)
         

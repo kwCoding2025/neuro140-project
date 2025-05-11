@@ -1,20 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-SVG to Image and Label Converter for FloorplanCAD Dataset
-
-This script converts SVG files from the FloorplanCAD dataset into:
-1. PNG images
-2. JSON label files
-3. Pickle files containing structured data
-
-Requirements:
-- cairosvg (for SVG to PNG conversion)
-- svgpathtools (for SVG path parsing)
-- numpy
-- pickle
-- json
-"""
+"""svg to image and label converter"""
 
 import os
 import json
@@ -28,14 +14,14 @@ from cairosvg import svg2png
 from svgpathtools import parse_path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Set up logging
+# setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define constants
+# constants
 SVG_NS = {"svg": "http://www.w3.org/2000/svg", 
           "inkscape": "http://www.inkscape.org/namespaces/inkscape"}
-OUTPUT_IMAGE_SIZE = (512, 512)  # Default output image size
+OUTPUT_IMAGE_SIZE = (512, 512)
 
 class SVGConverter:
     def __init__(self, input_dir, output_dir, image_size=OUTPUT_IMAGE_SIZE):
@@ -51,7 +37,7 @@ class SVGConverter:
         self.output_dir = Path(output_dir)
         self.image_size = image_size
         
-        # Create output directories
+        # create output dirs
         self.images_dir = self.output_dir / "images"
         self.json_dir = self.output_dir / "json"
         self.pkl_dir = self.output_dir / "pkl"
@@ -72,7 +58,7 @@ class SVGConverter:
     def convert_svg_to_png(self, svg_file, output_file):
         """Convert SVG file to PNG"""
         try:
-            # Convert Path objects to strings for cairosvg
+            # path to string
             svg_file_str = str(svg_file)
             output_file_str = str(output_file)
             
@@ -92,11 +78,11 @@ class SVGConverter:
             tree = ET.parse(svg_file)
             root = tree.getroot()
             
-            # Get SVG dimensions
+            # svg dimensions
             width = float(root.get('width', '100.0').replace('px', ''))
             height = float(root.get('height', '100.0').replace('px', ''))
             
-            # Extract layers and paths
+            # extract layers/paths
             layers = {}
             for g in root.findall(".//svg:g", SVG_NS):
                 layer_id = g.get('id', '')
@@ -113,27 +99,27 @@ class SVGConverter:
                         'instance-id': path.get('instance-id', '')
                     }
                     
-                    # Parse path to get coordinates
+                    # parse path coords
                     try:
                         svg_path = parse_path(path_data['d'])
-                        # Extract points along the path
+                        # extract path points
                         points = []
-                        for i in range(100):  # Sample 100 points along the path
+                        for i in range(100):  # sample 100 points
                             t = i / 99.0
                             point = svg_path.point(t)
-                            points.append((point.real / width, point.imag / height))  # Normalize to [0,1]
+                            points.append((point.real / width, point.imag / height))  # normalize [0,1]
                         path_data['points'] = points
                     except Exception:
-                        # If path parsing fails, just store the raw data
+                        # on fail, store raw
                         path_data['points'] = []
                     
                     paths.append(path_data)
                 
-                # Only add layers with paths
+                # only add layers w paths
                 if paths:
                     layers[layer_label] = paths
             
-            # Extract text elements
+            # extract text elements
             texts = []
             for text in root.findall(".//svg:text", SVG_NS):
                 text_data = {
@@ -161,32 +147,32 @@ class SVGConverter:
     def process_svg_file(self, svg_file):
         """Process a single SVG file"""
         try:
-            # Get relative path to maintain directory structure
+            # get relative path
             rel_path = os.path.relpath(str(svg_file), str(self.input_dir))
             base_name = os.path.splitext(rel_path)[0]
             
-            # Create output paths
+            # create output paths
             png_file = self.images_dir / f"{base_name}.png"
             json_file = self.json_dir / f"{base_name}.json"
             pkl_file = self.pkl_dir / f"{base_name}.pkl"
             
-            # Create parent directories if they don't exist
+            # create parent dirs
             os.makedirs(os.path.dirname(str(png_file)), exist_ok=True)
             os.makedirs(os.path.dirname(str(json_file)), exist_ok=True)
             os.makedirs(os.path.dirname(str(pkl_file)), exist_ok=True)
             
-            # Convert SVG to PNG
+            # svg to png
             png_success = self.convert_svg_to_png(svg_file, png_file)
             
-            # Extract path data
+            # extract path data
             svg_data = self.extract_paths_from_svg(svg_file)
             
             if svg_data:
-                # Save as JSON
+                # save json
                 with open(str(json_file), 'w', encoding='utf-8') as f:
                     json.dump(svg_data, f, ensure_ascii=False, indent=2)
                 
-                # Save as pickle
+                # save pickle
                 with open(str(pkl_file), 'wb') as f:
                     pickle.dump(svg_data, f)
                 
@@ -207,7 +193,7 @@ class SVGConverter:
         
         success_count = 0
         
-        # Process files in parallel
+        # process in parallel
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             futures = {executor.submit(self.process_svg_file, svg_file): svg_file for svg_file in svg_files}
             

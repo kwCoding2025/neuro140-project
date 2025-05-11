@@ -12,23 +12,12 @@ class CompositeModel(nn.Module):
             self.backbone = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
             num_ftrs = self.backbone.fc.in_features
             self.backbone.fc = nn.Identity()
-        else:  # ViT
+        else:
             self.backbone = ViTModel.from_pretrained(
                 'google/vit-base-patch16-224'
             )
             num_ftrs = self.backbone.config.hidden_size
             
-    
-            # freeze_layers = True
-            # if freeze_layers:
-            #     for name, param in self.backbone.named_parameters():
-            #         param.requires_grad = False
-            #         # Example: Unfreeze last two transformer blocks
-            #         if any(f'encoder.layer.{i}.' in name for i in [10, 11]):
-            #             param.requires_grad = True
-            #         # Ensure pooler layer is trainable if used
-            #         elif 'pooler' in name:
-            #             param.requires_grad = True
         
         self.head = nn.Sequential(
             nn.Linear(num_ftrs, 512),
@@ -37,13 +26,13 @@ class CompositeModel(nn.Module):
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(256, 2 + 200)  # room_count, wall_count, 100 wall coordinates
+            nn.Linear(256, 2 + 200)  # room, wall, coords
         )
 
     def forward(self, x):
         if self.backbone_type == 'resnet50':
             features = self.backbone(x)
-        else:  # ViT
+        else:
             outputs = self.backbone(x)
             features = outputs.last_hidden_state[:, 0]
 

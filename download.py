@@ -6,11 +6,11 @@ import shutil
 import json
 import zipfile
 
-# Set up logging
+# setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define dataset information
+# dataset info
 DATASET_NAME = "catwhisker/floorplancad-dataset"
 FILES_TO_DOWNLOAD = [
     "test-00.tar.xz",
@@ -18,17 +18,17 @@ FILES_TO_DOWNLOAD = [
     "train-01.tar.xz",
 ]
 
-# Define directories
+# define directories
 download_directory = "./downloaded_data/"
 extract_directory = "./floorplancad-dataset/"
 
-# Create directories if they don't exist
+# create directories
 os.makedirs(download_directory, exist_ok=True)
 os.makedirs(extract_directory, exist_ok=True)
 
-# Setup Kaggle API credentials
+# setup kaggle api
 def setup_kaggle_credentials():
-    # Get credentials from environment variables
+    # get env credentials
     username = os.environ.get("KAGGLE_USERNAME")
     key = os.environ.get("KAGGLE_KEY")
 
@@ -41,34 +41,33 @@ def setup_kaggle_credentials():
         "key": key
     }
     
-    # Create .kaggle directory if it doesn't exist
+    # create .kaggle dir
     kaggle_dir = os.path.expanduser('~/.kaggle')
     os.makedirs(kaggle_dir, exist_ok=True)
     
-    # Write credentials to kaggle.json
+    # write credentials
     with open(os.path.join(kaggle_dir, 'kaggle.json'), 'w') as f:
         json.dump(kaggle_creds, f)
     
-    # Set proper permissions for the credentials file
+    # set permissions
     os.chmod(os.path.join(kaggle_dir, 'kaggle.json'), 0o600)
     
     logger.info("Kaggle API credentials set up successfully from environment variables")
 
-# Function to download dataset files using Kaggle API
+# download kaggle dataset
 def download_kaggle_dataset():
     logger.info(f"Downloading dataset {DATASET_NAME}")
     
     try:
-        # Setup Kaggle credentials
         setup_kaggle_credentials()
             
-        # Download the specific files from the dataset
+        # download specific files
         for file_name in FILES_TO_DOWNLOAD:
-            # Kaggle API adds .zip extension to downloads
+            # kaggle api adds .zip
             zip_file_path = os.path.join(download_directory, file_name + ".zip")
             tar_file_path = os.path.join(download_directory, file_name)
             
-            # Skip if tar file already exists
+            # skip if exists
             if os.path.exists(tar_file_path):
                 logger.info(f"File {file_name} already exists, skipping download")
                 continue
@@ -77,13 +76,13 @@ def download_kaggle_dataset():
             cmd = f"kaggle datasets download -d {DATASET_NAME} -f {file_name} -p {download_directory} --force"
             subprocess.run(cmd, shell=True, check=True)
             
-            # Extract the .zip file to get the .tar.xz file
+            # extract .zip
             if os.path.exists(zip_file_path):
                 logger.info(f"Extracting zip file: {zip_file_path}")
                 with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                     zip_ref.extractall(download_directory)
                 
-                # Remove the zip file after extraction
+                # remove .zip
                 os.remove(zip_file_path)
                 logger.info(f"Removed zip file: {zip_file_path}")
             
@@ -95,29 +94,29 @@ def download_kaggle_dataset():
         logger.error(f"Error downloading dataset: {str(e)}")
         return False
 
-# Function to extract tar.xz files
+# extract tar.xz files
 def extract_files():
     for file_name in FILES_TO_DOWNLOAD:
         file_path = os.path.join(download_directory, file_name)
         
         try:
-            # Check if file exists
+            # check file exists
             if not os.path.exists(file_path):
                 logger.error(f"File not found: {file_path}")
                 continue
                 
-            # Get the base name without extension (test-00, train-00, train-01)
+            # get base name
             base_name = os.path.basename(file_path).split('.')[0]
             target_dir = os.path.join(extract_directory, base_name)
             
-            # Create subdirectory for this specific archive
+            # create sub-directory
             os.makedirs(target_dir, exist_ok=True)
             
             logger.info(f"Extracting {file_path} to {target_dir}")
             
-            # Extract the archive
+            # extract archive
             with tarfile.open(file_path) as tar:
-                # Filter to only extract SVG files
+                # filter svg files
                 svg_members = [m for m in tar.getmembers() if m.name.lower().endswith('.svg')]
                 tar.extractall(path=target_dir, members=svg_members)
                 
@@ -126,14 +125,14 @@ def extract_files():
         except Exception as e:
             logger.error(f"Error extracting {file_path}: {str(e)}")
 
-# Main execution
+# main
 if __name__ == "__main__":
-    # Download the dataset files
+    # download files
     if download_kaggle_dataset():
-        # Extract the files
+        # extract files
         extract_files()
         
-        # Print summary of extracted files
+        # print summary
         file_count = 0
         for root, _, files in os.walk(extract_directory):
             file_count += len(files)

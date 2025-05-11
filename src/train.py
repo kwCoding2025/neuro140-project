@@ -16,17 +16,17 @@ from PIL import Image
 import io
 import cairosvg
 
-# Import dataset and model from their respective files
+# import dataset and model
 from src.utils.data import FloorplanDataset
 from src.models import CompositeModel
 
-# Set up logging
+# setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Update paths to be relative to project root and network storage
+# paths
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "floorplancad-processed" / "pkl"  # Direct to PKL directory
+DATA_DIR = PROJECT_ROOT / "floorplancad-processed" / "pkl"
 NETWORK_DIR = Path("/n/netscratch/tambe_lab/Lab/kweerakoon/checkpoints-floorplan")
 CHECKPOINTS_DIR = NETWORK_DIR / "checkpoints"
 RUNS_DIR = NETWORK_DIR / "runs"
@@ -34,12 +34,11 @@ SPLIT_DIR = NETWORK_DIR / "split"
 EVAL_DIR = NETWORK_DIR / "evaluation_results"
 LOGS_DIR = NETWORK_DIR / "logs"
 
-# Create all necessary network directories
+# create network dirs
 for dir_path in [CHECKPOINTS_DIR, RUNS_DIR, SPLIT_DIR, EVAL_DIR, LOGS_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)
 
-# Add at the top of the file with other imports
-LOSS_WEIGHTS = (0.5, 0.4, 0.1)  # Define weights as a global constant
+LOSS_WEIGHTS = (0.5, 0.4, 0.1)
 
 def compute_loss(pred, target, weights=(0.5, 0.4, 0.1)):
     """Composite loss function"""
@@ -56,11 +55,11 @@ def train_epoch(model, loader, optimizer, device, writer, epoch, accumulation_st
     total_wall_loss = 0
     total_coord_loss = 0
     
-    # Determine rank for tqdm disabling
-    local_rank = int(os.environ.get("LOCAL_RANK", 0)) # Default to 0 if not set
+    # rank for tqdm
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
     disable_tqdm = local_rank != 0
 
-    # Wrap loader with tqdm, disable based on rank
+    # wrap loader with tqdm
     progress_bar = tqdm(enumerate(loader), desc='Training', total=len(loader), disable=disable_tqdm)
 
     for batch_idx, batch in progress_bar:
@@ -68,27 +67,27 @@ def train_epoch(model, loader, optimizer, device, writer, epoch, accumulation_st
         targets = {k: v.to(device) for k, v in batch['features'].items()}
         
         if (batch_idx % accumulation_steps != 0):
-            optimizer.zero_grad()  # Zero gradients at start of accumulation
+            optimizer.zero_grad()  # zero grad at start
 
         predictions = model(images)
         
-        # Use compute_loss function for consistency
+        # use compute_loss
         loss = compute_loss(predictions, targets, LOSS_WEIGHTS)
         
-        # Normalize loss for accumulation
+        # normalize loss
         loss = loss / accumulation_steps
         
         loss.backward()
         
-        # Only step after accumulation
+        # step after accumulation
         if (batch_idx + 1) % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
         
-        # Store unnormalized loss for metrics
+        # store unnormalized loss
         total_loss += loss.item() * accumulation_steps
         
-        # Calculate individual losses for logging
+        # calc individual losses
         room_loss = nn.MSELoss()(predictions['room_count'], targets['room_count'])
         wall_loss = nn.MSELoss()(predictions['wall_count'], targets['wall_count'])
         coord_loss = nn.L1Loss()(predictions['wall_coords'], targets['wall_coords'])
@@ -97,24 +96,24 @@ def train_epoch(model, loader, optimizer, device, writer, epoch, accumulation_st
         total_wall_loss += wall_loss.item()
         total_coord_loss += coord_loss.item()
         
-        # Log batch metrics only if writer exists (rank 0)
+        # log batch metrics
         if writer is not None:
             writer.add_scalar('Batch/room_loss', room_loss.item(), epoch * len(loader) + batch_idx)
             writer.add_scalar('Batch/wall_loss', wall_loss.item(), epoch * len(loader) + batch_idx)
             writer.add_scalar('Batch/coord_loss', coord_loss.item(), epoch * len(loader) + batch_idx)
 
-        # Update tqdm description if running on rank 0
+        # update tqdm if rank 0
         if local_rank == 0:
              progress_bar.set_postfix(loss=loss.item() * accumulation_steps)
 
-    # Handle any remaining gradients at the end of the epoch
+    # handle remaining grads
     if len(loader) % accumulation_steps != 0:
         optimizer.step()
         optimizer.zero_grad()
         
-    # Calculate averages
+    # calc averages
     num_batches = len(loader)
-    # Ensure num_batches is not zero to avoid division by zero
+    # avoid div by zero
     if num_batches > 0:
         avg_loss = total_loss / num_batches
         avg_room_loss = total_room_loss / num_batches
@@ -139,12 +138,12 @@ def validate_pkl_file(pkl_file):
         with open(pkl_file, 'rb') as f:
             data = pickle.load(f)
         
-        # Validate data structure based on convert_svg.py output
+        # validate data struct
         if not all(key in data for key in ['width', 'height', 'layers']):
             logger.warning(f"Missing required keys in {pkl_file}")
             return False
             
-        # Validate layers data
+        # validate layers
         if not isinstance(data['layers'], dict):
             logger.warning(f"Invalid layers data in {pkl_file}")
             return False
@@ -160,7 +159,7 @@ def save_split_datasets(train_files, val_files, test_files):
     split_dir = SPLIT_DIR
     split_dir.mkdir(exist_ok=True)
     
-    # Save splits
+    # save splits
     with open(split_dir / 'train.pkl', 'wb') as f:
         pickle.dump(train_files, f)
     with open(split_dir / 'val.pkl', 'wb') as f:
@@ -176,7 +175,7 @@ def find_latest_checkpoint(model_name):
     if not checkpoints:
         return None
     
-    # Extract epoch numbers and find the max
+    # extract epochs, find max
     epochs = [int(cp.stem.split('_')[-1]) for cp in checkpoints]
     if not epochs:
         return None
@@ -186,7 +185,7 @@ def find_latest_checkpoint(model_name):
 
 def main():
     try:
-        # Set up distributed training
+        # setup ddp
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
         
         if local_rank != -1:
@@ -201,15 +200,15 @@ def main():
         
         logger.info(f"Using device: {device}")
 
-        # Create directories (only on main process)
+        # create dirs (main proc)
         if local_rank == 0:
             for dir_path in [CHECKPOINTS_DIR, RUNS_DIR, SPLIT_DIR, EVAL_DIR, LOGS_DIR]:
                 dir_path.mkdir(parents=True, exist_ok=True)
         
-        # Find all pickle files
+        # find pkl files
         pkl_files = list((DATA_DIR).rglob("*.pkl"))
         
-        # Validate files
+        # validate files
         valid_files = [f for f in pkl_files if validate_pkl_file(f)]
         logger.info(f"Found {len(valid_files)} valid files out of {len(pkl_files)} total files")
         
@@ -217,15 +216,15 @@ def main():
             logger.error("No valid files found. Exiting.")
             return
         
-        # Split dataset
+        # split dataset
         train_files, temp_files = train_test_split(valid_files, test_size=0.3, random_state=42)
         val_files, test_files = train_test_split(temp_files, test_size=0.5, random_state=42)
         
-        # Save splits (only on main process)
+        # save splits (main proc)
         if local_rank == 0:
             save_split_datasets(train_files, val_files, test_files)
         
-        # Data augmentation for training
+        # train data augmentation
         train_transform = transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
@@ -234,19 +233,19 @@ def main():
             transforms.ToTensor(),
         ])
         
-        # Only resize and convert to tensor for validation/test
+        # eval transform
         eval_transform = transforms.Compose([
             transforms.Resize(224),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
         ])
         
-        # Create datasets and dataloaders
+        # create datasets and dataloaders
         train_dataset = FloorplanDataset(train_files, transform=train_transform)
         val_dataset = FloorplanDataset(val_files, transform=eval_transform)
         test_dataset = FloorplanDataset(test_files, transform=eval_transform)
         
-        # Set up data loaders with DistributedSampler for multi-GPU
+        # ddp samplers
         train_sampler = None
         if local_rank != -1:
             train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -267,26 +266,26 @@ def main():
         val_loader = DataLoader(val_dataset, batch_size=32, num_workers=4, pin_memory=True)
         test_loader = DataLoader(test_dataset, batch_size=32, num_workers=4, pin_memory=True)
         
-        # Initialize models, optimizer, scheduler
+        # init models, opt, sched
         models_to_train = {
             'resnet50': CompositeModel('resnet50'),
             'vit': CompositeModel('vit')
         }
         
         for model_name, model in models_to_train.items():
-            # Check for best checkpoint (to skip training entirely)
+            # check best ckpt (skip train)
             best_checkpoint_path = CHECKPOINTS_DIR / f'{model_name}_best.pt'
             if best_checkpoint_path.exists():
                 if local_rank == 0:
                     logger.info(f"Checkpoint {best_checkpoint_path} found for {model_name}. Skipping training.")
                 continue
             
-            # Check for latest epoch checkpoint (for resuming)
+            # check latest ckpt (resume)
             latest_checkpoint = find_latest_checkpoint(model_name)
             start_epoch = 0
             best_val_loss = float('inf')
             
-            # Log model training start only on rank 0
+            # log train start (rank 0)
             if local_rank == 0:
                 if latest_checkpoint:
                     logger.info(f"Found checkpoint {latest_checkpoint}. Resuming training for {model_name}...")
@@ -306,29 +305,29 @@ def main():
             optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
             
-            # Resume from checkpoint if exists
+            # resume from ckpt
             if latest_checkpoint:
-                # Load checkpoint
+                # load ckpt
                 map_location = {'cuda:%d' % 0: 'cuda:%d' % local_rank}
                 checkpoint = torch.load(latest_checkpoint, map_location=map_location)
                 
-                # Load model state
-                # If using DDP, need to load to the underlying model
+                # load model state
+                # ddp: load to module
                 if hasattr(model, 'module'):
                     model.module.load_state_dict(checkpoint['model_state_dict'])
                 else:
                     model.load_state_dict(checkpoint['model_state_dict'])
                 
-                # Load optimizer and scheduler state
+                # load opt/sched state
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                start_epoch = checkpoint['epoch'] + 1  # Resume from next epoch
+                start_epoch = checkpoint['epoch'] + 1  # resume next epoch
                 
-                # Check if best checkpoint exists to get best val loss
+                # get best val loss
                 if best_checkpoint_path.exists():
                     best_checkpoint = torch.load(best_checkpoint_path, map_location=map_location)
                     best_val_loss = best_checkpoint['val_loss']
                 
-                # Reset scheduler to match the epoch
+                # reset scheduler
                 scheduler = optim.lr_scheduler.CosineAnnealingLR(
                     optimizer, T_max=50, last_epoch=start_epoch-1
                 )
@@ -336,19 +335,19 @@ def main():
                 if local_rank == 0:
                     logger.info(f"Resumed from epoch {start_epoch} with best val loss: {best_val_loss:.4f}")
             
-            # Only create tensorboard writer on main process
+            # tb writer (main proc)
             writer = None
             if local_rank == 0:
                 writer = SummaryWriter(RUNS_DIR / model_name)
             
-            # Train for remaining epochs (from start_epoch to 50)
+            # train remaining epochs
             for epoch in range(start_epoch, 50):
                 if train_sampler is not None:
                     train_sampler.set_epoch(epoch)
                 
                 train_metrics = train_epoch(model, train_loader, optimizer, device, writer, epoch, accumulation_steps=1)
                 
-                # Validation
+                # validation
                 model.eval()
                 val_loss = 0
                 with torch.no_grad():
@@ -358,21 +357,21 @@ def main():
                         predictions = model(images)
                         val_loss += compute_loss(predictions, targets, LOSS_WEIGHTS).item()
                 
-                # Average the validation loss
+                # avg val loss
                 val_loss = val_loss / len(val_loader)
                 
-                # Synchronize val_loss across processes
+                # sync val_loss (ddp)
                 if local_rank != -1:
                     val_loss_tensor = torch.tensor([val_loss], device=device)
                     torch.distributed.all_reduce(val_loss_tensor)
                     val_loss = val_loss_tensor.item() / torch.distributed.get_world_size()
                 
-                # Log metrics - only if writer exists
+                # log metrics (if writer)
                 if writer is not None:
                     writer.add_scalar('Loss/train', train_metrics['total'], epoch)
                     writer.add_scalar('Loss/val', val_loss, epoch)
                 
-                # Update save to include start_epoch
+                # save with start_epoch
                 if epoch % 5 == 0 and local_rank == 0:
                     torch.save({
                         'epoch': epoch,
@@ -383,7 +382,7 @@ def main():
                 
                 scheduler.step()
                 
-                # Only main process needs to log to console
+                # log to console (main proc)
                 if local_rank == 0:
                     logger.info(f'Epoch {epoch}: Train Loss = {train_metrics["total"]:.4f}, Val Loss = {val_loss:.4f}')
 
